@@ -32,4 +32,4 @@ unobtainium PM2525 LCD OLED replacement
 // the battery symbol I don't use on my meter and the Y3 segment as I don't know it's purpose. They should be easy to add anyways.
 //
 // Hope it helps. I think it can be useful in many applications involving vintage equipment.
-// Please note that I'm an electronics engineer not a programmer so my code might not be written in a 'canonical' way :-)
+// Please note that I'm an electronics engineer not a programmer so my code might not be written in a 'canonical' way :-) 
