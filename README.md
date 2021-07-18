@@ -25,7 +25,7 @@ D13 ->  pin 4   SCK (CLK)
 
 D11 ->  pin 5   Din
 
-GND ->  pin 1   to 13
+GND ->  pin 1 and 7 to 13
 
 3.3v ->  pin 2   VCC
 
