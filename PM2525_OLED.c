@@ -152,7 +152,10 @@ void setup(void) {
 // the host drops a data frame every 30ms triggering an event . the received data are stored in frame[] in the right order
 // then decoded to be displayed
 // 
-void loop(void) {               // the host drops a data frame every 30ms. the received data are stored in frame[] in the right order
+void loop(void){
+  
+}
+void transcode(void) {               // the host drops a data frame every 30ms. the received data are stored in frame[] in the right order
   
   u8g2.firstPage();
   do {
@@ -261,7 +264,7 @@ void loop(void) {               // the host drops a data frame every 30ms. the r
 
     u8g2.setFont(u8g2_font_inr19_mf); // font for  value display 
     if (frame[16]&0x04){u8g2.drawStr(4,yfirtsline+36,"+" );} // polarity sign
-    else {u8g2.drawStr(4,yfirtsline+36,"-");}
+    else if (frame[16]&0x40){u8g2.drawStr(4,yfirtsline+36,"-");}
     
     int j =0;
 
@@ -408,6 +411,7 @@ void receiveEvent(int count)  // count should be 22 bytes for the first chunk an
     }
        idx++;        
    }
+   transcode();
 }
 
 
@@ -487,11 +491,10 @@ char sevenSeg2char(uint8_t input)
   case 0xF5:
     return '@';
   case 0xF6:
-    return '0';
+    return 'O';
   case 0xF7:
     return '8';
   default:
     return '?';
   }
 }
-
