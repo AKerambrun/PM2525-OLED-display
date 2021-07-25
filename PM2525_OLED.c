@@ -177,7 +177,7 @@ void loop(void){
 // 
 void transcode() {               // the host drops a data frame every 30ms. the received data are stored in frame[] in the right order
   
-    int yfirtsline = 14;
+    int yfirtsline = 13;
     char StrDisp[10];
     uint8_t  i, j;  /* index des tableaux sur 8 bit aulieu de 16, on est sur un MCU 8 bit, les calculs en 16, c'est en gros 2 calculs de 8 */
     uint16_t  lvalintU16; /* la valeur est en non signé, sur certains MCU, on a un petit gain */
