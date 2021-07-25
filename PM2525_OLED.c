@@ -1,7 +1,9 @@
 // *********************************************************************************************************************************************//
-//
+//                
 // This program converts the I2C display data of the Fluke/Philips PM2525 multimeter in case the original unobtainium LCD is gone for good 
 // to SPI data for a modern OLED display. 
+//
+//                                 written by Alexis Kerambrun , optimization by Claude Alves
 //
 // It's meant to use a 3,2 inch OLED. Those can be found on Aliexpress for about 17 bucks and exist in different colors.
 // the bus I use here is SPI so be sure you move the jumper resistor from R5 to R6 to set it up to SPI mode ( it can do 4 different modes parallel
@@ -130,12 +132,31 @@
     0x20, 0x00, 0x10, 0x00, 0x08, 0x00, 0x04, 0x00,
     0x02, 0x00, 0x7e, 0x00, 0x00, 0x00};
 
-   // function arrows at the bottom line (won't line up with the bezel though
+   // function arrows at the bottom line (won't line up with the bezel though)
     #define FCTARROW_width 5
     #define FCTARROW_height 6
     static unsigned char FCTARROW_bits[] = {
     0x04, 0x04, 0x04, 0x1f, 0x0e, 0x04};
+    
+   // rising edge 
+    #define R_EDGE_width 14
+    #define R_EDGE_height 16
+    static unsigned char R_EDGE_bits[] = {
+    0x00, 0x00, 0x00, 0x00, 0x80, 0x0f, 0x80, 0x00,
+    0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0xc0, 0x01,
+    0xe0, 0x03, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00,
+    0x80, 0x00, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x00};
 
+   // fallling edge 
+    #define F_EDGE_width 14
+    #define F_EDGE_height 16
+    static unsigned char F_EDGE_bits[] = {
+    0x00, 0x00, 0x00, 0x00, 0xfc, 0x00, 0x80, 0x00,
+    0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0xe0, 0x03,
+    0xc0, 0x01, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00,
+    0x80, 0x00, 0x80, 0x0f, 0x00, 0x00, 0x00, 0x00};
+
+   
 // construtor usage U8G2_SSD1322_NHD_256X64_1_4W_HW_SPI(rotation, cs, dc [, reset]) [page buffer, size = 256 bytes]
     U8G2_SSD1322_NHD_256X64_1_4W_HW_SPI u8g2(U8G2_R2, 5, 3, 4); // OLED init
 
@@ -148,127 +169,153 @@ void setup(void) {
   Wire.onReceive(receiveEvent); // register event
  
 }
-
-// the host drops a data frame every 30ms triggering an event . the received data are stored in frame[] in the right order
-// then decoded to be displayed
-// 
 void loop(void){
   
 }
-void transcode(void) {               // the host drops a data frame every 30ms. the received data are stored in frame[] in the right order
+// the host drops a data frame every 30ms triggering an event . the received data are stored in frame[] in the right order
+// then decoded to be displayed
+// 
+void transcode() {               // the host drops a data frame every 30ms. the received data are stored in frame[] in the right order
   
+    int yfirtsline = 14;
+    char StrDisp[10];
+    uint8_t  i, j;  /* index des tableaux sur 8 bit aulieu de 16, on est sur un MCU 8 bit, les calculs en 16, c'est en gros 2 calculs de 8 */
+    uint16_t  lvalintU16; /* la valeur est en non signé, sur certains MCU, on a un petit gain */
+    uint8_t  frame0, frame1,  frame2, frame7, frame8, frame9, frame10, frame11, frame12, frame13, frame14, frame16, frame17, frame18, frame19; 
+      
   u8g2.firstPage();
   do {
-    int yfirtsline = 10;
-    char StrDisp[10];
+
     
     u8g2.setFont(u8g2_font_tom_thumb_4x6_tr);   // font for the functions display 
+    
+    /* evite le recalcul de toutes les adresses à chaque accès au tableau */
+    /* En gros, à chaque accès a un élément d'un tableau, le code qui est executé est complexe car il recalcule généralement, à chaque fois, l'adresse de la varioable*/
+    /* a chatque frame[x], le code correspondant est &frame+x*sizeof(variable) et sur cetains MCU, une multiplication, c'est plusieurs cycles d'horloge*/ 
+    frame0 = frame[0];
+    frame1 = frame[1];
+    frame2 = frame[2]; 
+    frame7  = frame[7];
+    frame8 = frame[8];
+    frame9 = frame[9]; 
+    frame10 = frame[10];
+    frame11  = frame[11];
+    frame12 = frame[12];
+    frame13 = frame[13]; 
+    frame14 = frame[14]; 
+    frame16 = frame[16]; 
+    frame17 = frame[17]; 
+    frame18 = frame[18]; 
+    frame19 = frame[19];
 
-    if (frame[16]&0x02){u8g2.drawStr(0,yfirtsline,"REM" );}
-    if (frame[16]&0x20){u8g2.drawStr(16,yfirtsline,"SRQ" );}
-    if (frame[17]&0x02){u8g2.drawStr(32,yfirtsline,"LSTN" );}
-    if (frame[18]&0x20){u8g2.drawStr(52,yfirtsline,"TLK" );}
-    if (frame[18]&0x02){u8g2.drawStr(68,yfirtsline,"ONLY" );}
+    /* if (frame16&0x02) c en'est pas terrible point de vue qualité logicielle mais 
+    niveau rapidité ok, d'un point de vue qualitté soft, il faudrait écrire if ((frame16&0x02)==1)  */
+    if (frame16&0x02){u8g2.drawStr(0,yfirtsline,"REM" );}
+    if (frame16&0x20){u8g2.drawStr(16,yfirtsline,"SRQ" );}
+    if (frame17&0x02){u8g2.drawStr(32,yfirtsline,"LSTN" );}
+    if (frame18&0x20){u8g2.drawStr(52,yfirtsline,"TLK" );}
+    if (frame18&0x02){u8g2.drawStr(68,yfirtsline,"ONLY" );}
     
     /// todo
-    if (frame[19]&0x20){u8g2.drawStr(88,yfirtsline,"|");} //Z1 bargraph 
-    if (frame[8]&0x02){u8g2.drawStr(88+4,yfirtsline,".");} //2
-    if (frame[8]&0x01){u8g2.drawStr(88+8,yfirtsline,".");}//3
-    if (frame[8]&0x04){u8g2.drawStr(88+12,yfirtsline,".");} //4
-    if (frame[8]&0x08){u8g2.drawStr(88+16,yfirtsline,".");} //5
-    if (frame[8]&0x80){u8g2.drawStr(88+20,yfirtsline,".");} //6
-    if (frame[8]&0x40){u8g2.drawStr(88+24,yfirtsline,".");}//7
-    if (frame[8]&0x10){u8g2.drawStr(88+28,yfirtsline,".");}//8
-    if (frame[8]&0x20){u8g2.drawStr(88+32,yfirtsline,".");}//9
-    if (frame[7]&0x02){u8g2.drawStr(88+36,yfirtsline,".");}//10
-    if (frame[7]&0x01){u8g2.drawStr(88+40,yfirtsline,".");}//11
-    if (frame[7]&0x04){u8g2.drawStr(88+44,yfirtsline,".");}//12
-    if (frame[7]&0x08){u8g2.drawStr(88+48,yfirtsline,".");}//13
-    if (frame[7]&0x80){u8g2.drawStr(88+52,yfirtsline,".");}//14
-    if (frame[7]&0x40){u8g2.drawStr(88+56,yfirtsline,".");}//15
-    if (frame[7]&0x10){u8g2.drawStr(88+60,yfirtsline,".");}//16
-    if (frame[7]&0x20){u8g2.drawStr(88+64,yfirtsline,"|");}//17
+    if (frame19&0x20){u8g2.drawStr(88,yfirtsline,"|");} //Z1 bargraph 
+    if (frame8&0x02){u8g2.drawStr(88+4,yfirtsline,".");} //2
+    if (frame8&0x01){u8g2.drawStr(88+8,yfirtsline,".");}//3
+    if (frame8&0x04){u8g2.drawStr(88+12,yfirtsline,".");} //4
+    if (frame8&0x08){u8g2.drawStr(88+16,yfirtsline,".");} //5
+    if (frame8&0x80){u8g2.drawStr(88+20,yfirtsline,".");} //6
+    if (frame8&0x40){u8g2.drawStr(88+24,yfirtsline,".");}//7
+    if (frame8&0x10){u8g2.drawStr(88+28,yfirtsline,".");}//8
+    if (frame8&0x20){u8g2.drawStr(88+32,yfirtsline,".");}//9
+    if (frame7&0x02){u8g2.drawStr(88+36,yfirtsline,".");}//10
+    if (frame7&0x01){u8g2.drawStr(88+40,yfirtsline,".");}//11
+    if (frame7&0x04){u8g2.drawStr(88+44,yfirtsline,".");}//12
+    if (frame7&0x08){u8g2.drawStr(88+48,yfirtsline,".");}//13
+    if (frame7&0x80){u8g2.drawStr(88+52,yfirtsline,".");}//14
+    if (frame7&0x40){u8g2.drawStr(88+56,yfirtsline,".");}//15
+    if (frame7&0x10){u8g2.drawStr(88+60,yfirtsline,".");}//16
+    if (frame7&0x20){u8g2.drawStr(88+64,yfirtsline,"|");}//17
 //    
-    if (frame[2]&0x10){u8g2.drawStr(172,yfirtsline+10,"2w" );}
-    if (frame[1]&0x04){u8g2.drawStr(180,yfirtsline+10,"4w" );}
-    if (frame[2]&0x40){u8g2.drawStr(180,yfirtsline+20,"HF" );}
+    if (frame2&0x10){u8g2.drawStr(172,yfirtsline+10,"2w" );}
+    if (frame1&0x04){u8g2.drawStr(180,yfirtsline+10,"4w" );}
+    if (frame2&0x40){u8g2.drawStr(180,yfirtsline+20,"HF" );}
     
-    if (frame[1]&0x01){strcpy (StrDisp,"SHFT");
+    /* /!\ les strcpy sont gourmands en temps CPU, voir éventuellement la ré écriture de la fct */
+    if (frame1&0x01){strcpy (StrDisp,"SHFT");
     DrawInvStr ( 172,yfirtsline,StrDisp, strlen(StrDisp));}   
-    if (frame[1]&0x20){strcpy (StrDisp,"LIM");
+    if (frame1&0x20){strcpy (StrDisp,"LIM");
     DrawInvStr ( 192,yfirtsline,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x02){strcpy (StrDisp,"DELTA%");
+    if (frame0&0x02){strcpy (StrDisp,"DELTA%");
     DrawInvStr ( 208,yfirtsline,StrDisp, strlen(StrDisp));}
-    if (frame[1]&0x40){strcpy (StrDisp,"CAL");
+    if (frame1&0x40){strcpy (StrDisp,"CAL");
     DrawInvStr ( 192,yfirtsline+10,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x01){strcpy (StrDisp,"AX+B");
+    if (frame0&0x01){strcpy (StrDisp,"AX+B");
     DrawInvStr ( 212,yfirtsline+10,StrDisp, strlen(StrDisp));}
-    if (frame[1]&0x40){strcpy (StrDisp,"MIN");
+    if (frame1&0x40){strcpy (StrDisp,"MIN");
     DrawInvStr ( 192,yfirtsline+20,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x04){strcpy (StrDisp,"MAX");
+    if (frame0&0x04){strcpy (StrDisp,"MAX");
     DrawInvStr ( 212,yfirtsline+20,StrDisp, strlen(StrDisp));}
-    if (frame[1]&0x80){strcpy (StrDisp,"READ");
+    if (frame1&0x80){strcpy (StrDisp,"READ");
     DrawInvStr ( 192,yfirtsline+30,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x08){strcpy (StrDisp,"BURST");
+    if (frame0&0x08){strcpy (StrDisp,"BURST");
     DrawInvStr ( 212,yfirtsline+30,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x10){strcpy (StrDisp,"SEQU");
+    if (frame0&0x10){strcpy (StrDisp,"SEQU");
     DrawInvStr ( 192,yfirtsline+40,StrDisp, strlen(StrDisp));}
-    if (frame[0]&0x20){strcpy (StrDisp,"DELAY");
+    if (frame0&0x20){strcpy (StrDisp,"DELAY");
     DrawInvStr ( 212,yfirtsline+40,StrDisp, strlen(StrDisp));}
-    if (frame[17]&0x10){strcpy (StrDisp,"ZERO");
+    if (frame17&0x10){strcpy (StrDisp,"ZERO");
     DrawInvStr ( 192,yfirtsline+50,StrDisp, strlen(StrDisp));}
-    if (frame[17]&0x20){strcpy (StrDisp,"SET");
+    if (frame17&0x20){strcpy (StrDisp,"SET");
     DrawInvStr ( 212,yfirtsline+50,StrDisp, strlen(StrDisp));}
 
-    if (frame[1]&0x02){u8g2.drawXBM( 160, yfirtsline-6, lsp_width, lsp_height, lsp_bits);}
-    if (frame[2]&0x20){u8g2.drawXBM( 160, yfirtsline+4, diode_width, diode_height, diode_bits);}
-    if (frame[0]&0x40){u8g2.drawXBM( 180, yfirtsline+29, AC_width, AC_height, AC_bits);}
-    if (frame[0]&0x80){u8g2.drawXBM( 180, yfirtsline+36, DC_width, DC_height, DC_bits);}
-    if (frame[2]&0x80){u8g2.drawXBM( 180, yfirtsline+26, DCAC_width, DCAC_height, DCAC_bits);}
-    if (frame[2]&0x01){u8g2.drawXBM( 172, yfirtsline+18, DNARROW_width, DNARROW_height, DNARROW_bits);}
-    if (frame[2]&0x02){u8g2.drawXBM( 172, yfirtsline+13, UPARROW_width, UPARROW_height, UPARROW_bits);}
-    if (frame[2]&0x04){u8g2.drawXBM( 168, yfirtsline+26, Z_width, Z_height, Z_bits);}
+    if (frame1&0x02){u8g2.drawXBM( 160, yfirtsline-6, lsp_width, lsp_height, lsp_bits);}
+    if (frame2&0x20){u8g2.drawXBM( 160, yfirtsline+4, diode_width, diode_height, diode_bits);}
+    if (frame0&0x40){u8g2.drawXBM( 180, yfirtsline+29, AC_width, AC_height, AC_bits);}
+    if (frame0&0x80){u8g2.drawXBM( 180, yfirtsline+36, DC_width, DC_height, DC_bits);}
+    if (frame2&0x80){u8g2.drawXBM( 180, yfirtsline+26, DCAC_width, DCAC_height, DCAC_bits);}
+    if (frame2&0x01){u8g2.drawXBM( 172, yfirtsline+18, DNARROW_width, DNARROW_height, DNARROW_bits);}
+    if (frame2&0x02){u8g2.drawXBM( 172, yfirtsline+13, UPARROW_width, UPARROW_height, UPARROW_bits);}
+    if (frame2&0x04){u8g2.drawXBM( 168, yfirtsline+26, Z_width, Z_height, Z_bits);}
 
     // bottom line
-    if (frame[17]&0x01){u8g2.drawStr(0,yfirtsline+50,"M RNG" );}
-    if (frame[17]&0x04){u8g2.drawStr(24,yfirtsline+50,"S TRG" );}
-    if (frame[17]&0x08){u8g2.drawXBM( 45, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
-    if (frame[18]&0x80){u8g2.drawStr(52,yfirtsline+50,"SPEED" );}
-    if (frame[18]&0x40){u8g2.drawStr(72,yfirtsline+50,"1" );} 
-    if (frame[18]&0x10){u8g2.drawStr(76,yfirtsline+50,"2" );}  
-    if (frame[18]&0x01){u8g2.drawStr(80,yfirtsline+50,"3" );}  
-    if (frame[18]&0x04){u8g2.drawStr(84,yfirtsline+50,"4" );}  
-    if (frame[18]&0x08){u8g2.drawXBM( 90, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
-    if (frame[19]&0x80){u8g2.drawStr(97,yfirtsline+50,"FILT" );} 
-    if (frame[19]&0x40){u8g2.drawStr(117,yfirtsline+50,"NULL" );}  
-    if (frame[19]&0x10){u8g2.drawXBM( 133, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
-    if (frame[19]&0x01){u8g2.drawStr(140,yfirtsline+50,"HOLD" );}  
-    if (frame[19]&0x04){u8g2.drawStr(160,yfirtsline+50,"PROBE" );}  
-    if (frame[19]&0x08){u8g2.drawXBM( 182, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
-    if (frame[16]&0x01){u8g2.drawXBM( 0, yfirtsline+6, ZAP_width, ZAP_height, ZAP_bits);}
-    if (frame[16]&0x10){u8g2.drawXBM( 18, yfirtsline+6, UPARROW2_width, UPARROW2_height, UPARROW2_bits);}
-    if (frame[19]&0x02){u8g2.drawXBM(146, yfirtsline+6, S_width, S_height, S_bits);}
+    if (frame16&0x01){u8g2.drawXBM( 0, yfirtsline+6, ZAP_width, ZAP_height, ZAP_bits);}
+    if (frame16&0x10){u8g2.drawXBM( 18, yfirtsline+6, UPARROW2_width, UPARROW2_height, UPARROW2_bits);}
+    if (frame17&0x01){u8g2.drawStr(0,yfirtsline+50,"M RNG" );}
+    if (frame17&0x04){u8g2.drawStr(24,yfirtsline+50,"S TRG" );}
+    if (frame17&0x08){u8g2.drawXBM( 45, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
+    if (frame18&0x80){u8g2.drawStr(52,yfirtsline+50,"SPEED" );}
+    if (frame18&0x40){u8g2.drawStr(72,yfirtsline+50,"1" );} 
+    if (frame18&0x10){u8g2.drawStr(76,yfirtsline+50,"2" );}  
+    if (frame18&0x01){u8g2.drawStr(80,yfirtsline+50,"3" );}  
+    if (frame18&0x04){u8g2.drawStr(84,yfirtsline+50,"4" );}  
+    if (frame18&0x08){u8g2.drawXBM( 90, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
+    if (frame19&0x80){u8g2.drawStr(97,yfirtsline+50,"FILT" );} 
+    if (frame19&0x40){u8g2.drawStr(117,yfirtsline+50,"NULL" );}  
+    if (frame19&0x10){u8g2.drawXBM( 133, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
+    if (frame19&0x01){u8g2.drawStr(140,yfirtsline+50,"HOLD" );}  
+    if (frame19&0x04){u8g2.drawStr(160,yfirtsline+50,"PROBE" );}  
+    if (frame19&0x08){u8g2.drawXBM( 182, yfirtsline+44, FCTARROW_width, FCTARROW_height, FCTARROW_bits);}
+    if (frame19&0x02){u8g2.drawXBM(146, yfirtsline+6, S_width, S_height, S_bits);}
 
     // dots
-    if (frame[16]&0x80){u8g2.drawXBM(20, yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[14]&0x08){u8g2.drawXBM(20+17, yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[13]&0x08){u8g2.drawXBM(20+(2*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[12]&0x08){u8g2.drawXBM(20+(3*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[11]&0x08){u8g2.drawXBM(20+(4*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[10]&0x08){u8g2.drawXBM(20+(5*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
-    if (frame[9]&0x08){u8g2.drawXBM(20+(6*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame16&0x80){u8g2.drawXBM(20, yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame14&0x08){u8g2.drawXBM(20+17, yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame13&0x08){u8g2.drawXBM(20+(2*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame12&0x08){u8g2.drawXBM(20+(3*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame11&0x08){u8g2.drawXBM(20+(4*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame10&0x08){u8g2.drawXBM(20+(5*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
+    if (frame9&0x08){u8g2.drawXBM(20+(6*17), yfirtsline+34, DP_width, DP_height, DP_bits);}
     // if (frame[2]&0x08){u8g2.drawXBM(20+12+(7*17), yfirtsline+34, DP_width, DP_height, DP_bits); // originally used to draw the legs
     //                   u8g2.drawXBM(20+26+(7*17), yfirtsline+34, DP_width, DP_height, DP_bits);} // of the omega symbol useless here
         
     // second line actual value display + units
 
     u8g2.setFont(u8g2_font_inr19_mf); // font for  value display 
-    if (frame[16]&0x04){u8g2.drawStr(4,yfirtsline+36,"+" );} // polarity sign
-    else if (frame[16]&0x40){u8g2.drawStr(4,yfirtsline+36,"-");}
+     if (frame[16]&0x04){u8g2.drawStr(4,yfirtsline+36,"+" );} // polarity sign
+    else if (frame[16]&0x40) {u8g2.drawStr(4,yfirtsline+36,"-");}
     
-    int j =0;
+     j =0;
 
-    for (int i=15; i>8 ; i--){
+    for ( i=15; i>8 ; i--){
       value[j++] = ( sevenSeg2char(frame[i]&0xf7));
     }
     u8g2.drawStr(21,yfirtsline+36,value);
@@ -277,17 +324,19 @@ void transcode(void) {               // the host drops a data frame every 30ms. 
     // units prefix
     u8g2.setFont(u8g2_font_inr16_mf); // slightly smaller font for the units
 
-        j = 0x00 + frame[5];
-        j = j << 8;
-        j += frame[6];
+        lvalintU16 = (uint16_t)frame[5];
+        lvalintU16 = lvalintU16 << 8;
+        lvalintU16 += (uint16_t)frame[6];
 
-        switch(j)
+        switch(lvalintU16)
         {
         case 0x2288:
-          value[0] = '/'; // falling and raising edge
+          u8g2.drawXBM( 138, yfirtsline+20, R_EDGE_width, R_EDGE_height, R_EDGE_bits);
+          value[0] = ' ';
           break;
         case 0x8282:
-          value[0] = 0x5c;  // '\'
+          u8g2.drawXBM( 138, yfirtsline+20, F_EDGE_width, F_EDGE_height, F_EDGE_bits);
+          value[0] = ' ';
           break;
         case 0x0145:
           value[0] = 'V';
@@ -322,17 +371,19 @@ void transcode(void) {               // the host drops a data frame every 30ms. 
 
       // prefix
       
-        j = 0x00 + frame[3];
-        j = j << 8;
-        j += frame[4];
+        lvalintU16 = (uint16_t)frame[3];
+        lvalintU16 = lvalintU16 << 8;
+        lvalintU16 += (uint16_t)frame[4];
 
-        switch(j)
+        switch(lvalintU16)
         {
         case 0x2288:
-          value[1] = '/';
+          u8g2.drawXBM( 152, yfirtsline+20, R_EDGE_width, R_EDGE_height, R_EDGE_bits);
+          value[1] = ' ';
           break;
         case 0x8282:
-          value[1] = 0x5c;  // '\'
+          u8g2.drawXBM( 152, yfirtsline+20, F_EDGE_width, F_EDGE_height, F_EDGE_bits);
+          value[1] = ' ';
           break;
         case 0x217:
           value[1] = 'P';
@@ -353,8 +404,8 @@ void transcode(void) {               // the host drops a data frame every 30ms. 
           value[1] = 'A';
           break;
         case 0x7007:      // The omega symbol doesn't exist in the inconsolata font so let's make our own
-          value[1] = ' '; // ohms
           u8g2.drawXBM( 152, yfirtsline+20, OMEGA_width, OMEGA_height, OMEGA_bits);
+          value[1] = ' ';
           break;
         case 0xA00F:
           value[1] = 'C';
@@ -422,78 +473,110 @@ char sevenSeg2char(uint8_t input)
   {
   case 0x00:
     return ' ';
+    break;
   case 0x01:
     return '-';
+    break;
   case 0x02:
     return '\'';
+    break;
   case 0x05:
     return 'R';
+    break;
   case 0x08:
     return '.';
   case 0x12:
     return '\"';
+    break;
   case 0x27:
     return 'F';
+    break;
   case 0x35:
     return '?';
   case 0x37:
     return 'P';
+    break;
   case 0x50:
     return '1';
+    break;
   case 0x53:
     return '4';
+    break;
   case 0x57:
     return 'H';
+    break;
   case 0x70:
     return '7';
   case 0x73:
     return 'Q';
+    break;
   case 0x76:
     return 'N';
+    break;
   case 0x77:
     return 'A';
+    break;
   case 0x80:
     return '_';
+    break;
   case 0x81:
     return '=';
   case 0x86:
     return 'L';
   case 0x87:
     return 'T';
+    break;
   case 0xA6:
     return 'C';
+    break;
   case 0xA7:
     return 'E';
+    break;
   case 0xB5:
     return '2';
+    break;
   case 0xC7:
     return 'B';
+    break;
   case 0xD3:
     return 'Y';
+    break;
   case 0xD5:
     return 'D';
+    break;
   case 0xD6:
     return 'U';
+    break;
   case 0xE3:
     return '5';
+    break;
   case 0xE6:
     return 'G';
+    break;
   case 0xE7:
     return '6';
+    break;
   case 0xF0:
     return ']';
+    break;
   case 0xF1:
     return '3';
+    break;
   case 0xF3:
     return '9';
+    break;
   case 0xF4:
     return 'J';
+    break;
   case 0xF5:
     return '@';
+    break;
   case 0xF6:
     return 'O';
+    break;
   case 0xF7:
     return '8';
+    break;
   default:
     return '?';
   }
